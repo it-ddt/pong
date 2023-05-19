@@ -32,13 +32,34 @@ class Game:
         )
         ball = Ball(self.screen_rect)
         ball.throw_in()
+        score_1 = Score(
+            center=(self.screen_rect.width * 0.25, self.screen_rect.height * 0.05),
+            size=50,
+            score=player_1.score
+        )
+        score_2 = Score(
+            center=(self.screen_rect.width * 0.75, self.screen_rect.height * 0.05),
+            size=50,
+            score=player_2.score
+        )
         self.paddles = pygame.sprite.Group()
         self.ball = pygame.sprite.Group()
+        self.scores = pygame.sprite.Group()
         self.paddles.add(player_1)
         self.paddles.add(player_2)
         self.ball.add(ball)
+        self.scores.add(score_1)
+        self.scores.add(score_2)
         self.clock = pygame.time.Clock()
         self.main_loop()
+
+    def check_goal(self):
+        if self.ball.sprites()[0].rect.right >= self.screen_rect.right:
+            self.paddles.sprites()[0].score += 1
+            self.ball.sprites()[0].throw_in()
+        if self.ball.sprites()[0].rect.left <= self.screen_rect.left:
+            self.paddles.sprites()[1].score += 1
+            self.ball.sprites()[0].throw_in()
         
     def main_loop(self):
         game = True
@@ -52,10 +73,13 @@ class Game:
                 game = False
 
             self.paddles.update()
-            self.ball.update()
+            self.ball.update(self.paddles)
+            self.scores.update()
+            self.check_goal()
             self.screen.fill(BLACK)
             self.paddles.draw(self.screen)
             self.ball.draw(self.screen)
+            self.scores.draw(self.screen)
             pygame.display.flip()
             self.clock.tick(FPS)
         pygame.quit()
@@ -89,6 +113,7 @@ class Paddle(pygame.sprite.Sprite):
         self.speed = speed
         self.keys = keys
         self.is_automatic = is_automatic
+        self.score = 0
 
     def update(self):
         if not self.is_automatic:
@@ -132,18 +157,31 @@ class Ball(pygame.sprite.Sprite):
         self.vel_x = vel_x
         self.vel_y = vel_y
 
-    def update(self):
+    def update(self, paddles_group):
+        self.move()
+        self.wall_bounce()
+        self.paddles_bounce(paddles_group)
+
+    def move(self):
+        """
+        движение мяча по X и Y
+        """
         self.vel_x = sin(radians(self.direction)) * self.speed
         self.vel_y = cos(radians(self.direction)) * self.speed * -1
         self.rect.x += self.vel_x
         self.rect.y += self.vel_y
-        self.bounce()
 
     def throw_in(self):
+        """
+        вброс мяча: центрирование и поворт в сторону одни или других ворот
+        """
         self.rect.center = self.screen_rect.center
         self.direction = choice((randint(45, 135), randint(225, 315)))
 
-    def bounce(self):
+    def wall_bounce(self):
+        """
+        отскок от верхней и нижней границы экрана
+        """
         if self.rect.top <= self.screen_rect.top:
             self.direction *= -1
             self.direction += 180
@@ -151,10 +189,37 @@ class Ball(pygame.sprite.Sprite):
             self.direction *= -1
             self.direction += 180
 
+    def paddles_bounce(self, paddles_group):
+        """
+        отскок мяча от ракеток
+        """
+        for paddle in paddles_group:
+            if paddle.rect.colliderect(self.rect):
+                self.direction *= -1
 
-class Score:
-    """ табло """
-    pass
+
+class Score(pygame.sprite.Sprite):
+    """
+    табло
+    FIXME: счёт всех игроков не обновляется, остаеётся изначальным
+    """
+    def __init__(
+            self,
+            center=None,
+            size=None,
+            color=WHITE,
+            score=None
+    ):
+        super().__init__()
+        self.font = pygame.font.Font(None, size)
+        self.score = score
+        self.color = color
+        self.image = self.font.render(str(self.score), True, self.color)
+        self.rect = self.image.get_rect()
+        self.rect.center = center
+
+    def update(self):
+        self.image = self.font.render(str(self.score), True, self.color)
 
 
 game = Game()

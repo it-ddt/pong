@@ -1,7 +1,8 @@
 import pygame
 import sys
-from random import randint
+from random import randint, choice
 from math import sin, cos, radians
+import time
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -17,42 +18,50 @@ class Game:
             pygame.FULLSCREEN
         )
         self.rect = self.screen.get_rect()
-        player_1 = Paddle(
+        self.player_1 = Paddle(
             screen_rect=self.rect,
             center=(self.rect.width * 0.1, self.rect.centery),
             size=(self.rect.width * 0.01, self.rect.height * 0.1),
             keys=(pygame.K_w, pygame.K_s)
         )
-        player_2 = Paddle(
+        self.player_2 = Paddle(
             screen_rect=self.rect,
             center=(self.rect.width * 0.9, self.rect.centery),
             size=(self.rect.width * 0.01, self.rect.height * 0.1),
             is_automatic=True
         )
-        ball = Ball(
+        self.ball = Ball(
             self.rect,
             self.rect.center,
             (self.rect.width * 0.01, self.rect.width * 0.01)
         )
-        score_1 = Score(
+        self.score_1 = Score(
             center=(self.rect.width * 0.25, self.rect.height * 0.10),
-            paddle=player_1
+            paddle=self.player_1
         )
-        score_2 = Score(
+        self.score_2 = Score(
             center=(self.rect.width * 0.75, self.rect.height * 0.10),
-            paddle=player_2
+            paddle=self.player_2
         )
         self.paddles = pygame.sprite.Group()
         self.balls = pygame.sprite.Group()
         self.scores = pygame.sprite.Group()
-        self.paddles.add(player_1)
-        self.paddles.add(player_2)
-        ball.throw_in()
-        self.balls.add(ball)
-        self.scores.add(score_1)
-        self.scores.add(score_2)
+        self.paddles.add(self.player_1)
+        self.paddles.add(self.player_2)
+        self.ball.throw_in()
+        self.balls.add(self.ball)
+        self.scores.add(self.score_1)
+        self.scores.add(self.score_2)
         self.clock = pygame.time.Clock()
         self.main_loop()
+
+    def check_goal(self):
+        if self.ball.rect.right >= self.rect.right:
+            self.player_1.score += 1
+            self.ball.throw_in()
+        if self.ball.rect.left <= self.rect.left:
+            self.player_2.score += 1
+            self.ball.throw_in()
 
     def main_loop(self):
         game = True
@@ -66,8 +75,10 @@ class Game:
                 game = False
 
             self.screen.fill(BLACK)
-            self.paddles.update()
-            self.balls.update()
+            self.paddles.update(self.ball)
+            self.balls.update(self.paddles)
+            self.scores.update()
+            self.check_goal()
             self.paddles.draw(self.screen)
             self.balls.draw(self.screen)
             self.scores.draw(self.screen)
@@ -105,13 +116,24 @@ class Paddle(pygame.sprite.Sprite):
         self.screen_rect = screen_rect
         self.score = score
 
-    def update(self):
+    def update(self, ball):
         keys = pygame.key.get_pressed()
         if not self.is_automatic:
             if keys[self.keys[0]]:
                 if self.rect.top >= self.screen_rect.top:
                     self.rect.y -= self.speed
             if keys[self.keys[1]]:
+                if self.rect.bottom <= self.screen_rect.bottom:
+                    self.rect.y += self.speed
+
+        else:
+            """
+            TODO: как подождать только в этом спрайте, не затрагивая другие?
+            """
+            if ball.rect.centery < self.rect.centery:
+                if self.rect.top >= self.screen_rect.top:
+                    self.rect.y -= self.speed
+            if ball.rect.centery > self.rect.centery:
                 if self.rect.bottom <= self.screen_rect.bottom:
                     self.rect.y += self.speed
 
@@ -140,10 +162,10 @@ class Ball(pygame.sprite.Sprite):
         self.speed = speed
         self.screen_rect = screen_rect
 
-    def update(self):
+    def update(self, paddles):
         self.move()
-        self.bounce()
-        self.check_goal()
+        self.bounce_walls()
+        self.bounce_paddles(paddles)
 
     def move(self):
         self.velocity_x = sin(radians(self.direction)) * self.speed
@@ -151,7 +173,7 @@ class Ball(pygame.sprite.Sprite):
         self.rect.x += self.velocity_x
         self.rect.y += self.velocity_y
 
-    def bounce(self):
+    def bounce_walls(self):
         """
         отскок мяча от верхней и нижней границы
         """
@@ -162,31 +184,22 @@ class Ball(pygame.sprite.Sprite):
             self.direction *= -1
             self.direction += 180
 
+    def bounce_paddles(self, paddles):
+        """
+        отскок мяча от всех ракеток
+        ракетка сталкивается с мячом
+        """
+        for paddle in paddles:
+            if paddle.rect.colliderect(self.rect):
+                self.direction *= -1
+
     def throw_in(self):
         """
         центририрует мяч и запускает в направлении ворот левого или правого игрока
         """
         self.rect.center = self.screen_rect.center
-        if randint(0, 1):
-           self.direction = randint(45, 135)
-        else:
-            self.direction = randint(225, 315)
+        self.direction = choice((randint(45, 135), randint(225, 315)))
 
-    def check_goal(self):
-        """
-        TODO:
-        гол
-        засчитать очко одному или другому игроку
-        вернуть мяч на цетр
-        повернуть мяч в другом направлении
-        """
-        if self.rect.right >= self.screen_rect.right:
-            print("гол правому")
-            self.throw_in()
-        if self.rect.left <= self.screen_rect.left:
-            print("гол правому")
-            self.throw_in()
-    
 
 class Score(pygame.sprite.Sprite):
     """
@@ -202,11 +215,17 @@ class Score(pygame.sprite.Sprite):
             paddle=None,
     ):
         super().__init__()
-        self.font = pygame.font.Font(None, size)
-        self.image = self.font.render(str(paddle.score), True, color)
-        self.rect = self.image.get_rect(center=center)
         self.paddle = paddle
-        
+        self.color = color
+        self.center = center
+        self.font = pygame.font.Font(None, size)
+        self.image = self.font.render(str(self.paddle.score), True, color)
+        self.rect = self.image.get_rect(center=center)
+
+    def update(self):
+        self.image = self.font.render(str(self.paddle.score), True, self.color)
+        self.rect = self.image.get_rect(center=self.center)  # TODO: пересчитать центр
+
 
 game = Game()
 sys.exit()
