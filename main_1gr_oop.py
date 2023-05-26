@@ -140,7 +140,7 @@ class Paddle(pygame.sprite.Sprite):
                     self.rect.y += self.speed
         else:  # автоматика
             self.elapsed_time += dt
-            if self.elapsed_time >= 100:  # TODO: пробросить ожидание в конструктор
+            if self.elapsed_time >= 1:  # TODO: пробросить ожидание в конструктор
                 if self.rect.centery > ball.rect.centery:
                     if self.rect.top > self.screen_rect.top:
                         self.rect.y -= self.speed

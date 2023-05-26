@@ -2,7 +2,6 @@ import pygame
 import sys
 from random import randint, choice
 from math import sin, cos, radians
-import time
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
@@ -12,6 +11,9 @@ FPS = 30
 class Game:
     def __init__(self):
         pygame.init()
+        pygame.mixer.init()
+        self.bounce_snd = pygame.mixer.Sound('./assets/bounce.wav')
+        self.goal_sound = pygame.mixer.Sound('./assets/goal.wav')
         screen_info = pygame.display.Info()
         self.screen = pygame.display.set_mode(
             (screen_info.current_w, screen_info.current_h),
@@ -22,7 +24,7 @@ class Game:
             screen_rect=self.rect,
             center=(self.rect.width * 0.1, self.rect.centery),
             size=(self.rect.width * 0.01, self.rect.height * 0.1),
-            keys=(pygame.K_w, pygame.K_s)
+            keys=(pygame.K_w, pygame.K_s),
         )
         self.player_2 = Paddle(
             screen_rect=self.rect,
@@ -33,7 +35,8 @@ class Game:
         self.ball = Ball(
             self.rect,
             self.rect.center,
-            (self.rect.width * 0.01, self.rect.width * 0.01)
+            (self.rect.width * 0.01, self.rect.width * 0.01),
+            sound=self.bounce_snd
         )
         self.score_1 = Score(
             center=(self.rect.width * 0.25, self.rect.height * 0.10),
@@ -66,6 +69,8 @@ class Game:
     def main_loop(self):
         game = True
         while game:
+            dt = self.clock.tick(FPS)
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     game = False
@@ -75,7 +80,7 @@ class Game:
                 game = False
 
             self.screen.fill(BLACK)
-            self.paddles.update(self.ball)
+            self.paddles.update(self.ball, dt)
             self.balls.update(self.paddles)
             self.scores.update()
             self.check_goal()
@@ -89,11 +94,15 @@ class Game:
                 (self.rect.centerx, self.rect.top)
             )
             pygame.display.flip()
-            self.clock.tick(FPS)
+            
         pygame.quit()
 
 
 class Paddle(pygame.sprite.Sprite):
+    """
+    delay - время ожидания действия в милисекундах, то есть,
+    чем оно меньше, тем быстрее действует автоматическая ракетка
+    """
     def __init__(
             self,
             screen_rect=None,
@@ -103,7 +112,8 @@ class Paddle(pygame.sprite.Sprite):
             keys=(pygame.K_UP, pygame.K_DOWN),
             is_automatic=False,
             speed=10,
-            score=0
+            score=0,
+            delay=100
     ):
         super().__init__()
         self.image = pygame.Surface(size)
@@ -115,10 +125,15 @@ class Paddle(pygame.sprite.Sprite):
         self.speed = speed
         self.screen_rect = screen_rect
         self.score = score
+        self.elapsed_time = 0
+        self.delay = delay
+        self.direction = 0
 
-    def update(self, ball):
+    def update(self, ball, dt):
         keys = pygame.key.get_pressed()
         if not self.is_automatic:
+            self.prev_y = self.rect.centery
+
             if keys[self.keys[0]]:
                 if self.rect.top >= self.screen_rect.top:
                     self.rect.y -= self.speed
@@ -126,16 +141,23 @@ class Paddle(pygame.sprite.Sprite):
                 if self.rect.bottom <= self.screen_rect.bottom:
                     self.rect.y += self.speed
 
+            if self.rect.centery < self.prev_y:
+                self.direction = 0
+            elif self.rect.centery > self.prev_y:
+                self.direction = 180
+            else:
+                self.direction = 90
+
         else:
-            """
-            TODO: как подождать только в этом спрайте, не затрагивая другие?
-            """
-            if ball.rect.centery < self.rect.centery:
-                if self.rect.top >= self.screen_rect.top:
-                    self.rect.y -= self.speed
-            if ball.rect.centery > self.rect.centery:
-                if self.rect.bottom <= self.screen_rect.bottom:
-                    self.rect.y += self.speed
+            self.elapsed_time += dt
+            if self.elapsed_time >= self.delay:
+                if ball.rect.centery < self.rect.centery:
+                    if self.rect.top >= self.screen_rect.top:
+                        self.rect.y -= self.speed
+                if ball.rect.centery > self.rect.centery:
+                    if self.rect.bottom <= self.screen_rect.bottom:
+                        self.rect.y += self.speed
+                self.elapsed_time = 0
 
 
 class Ball(pygame.sprite.Sprite):
@@ -149,7 +171,8 @@ class Ball(pygame.sprite.Sprite):
             speed=10,
             velocity_x=None,
             velocity_y=None,
-            direction=90
+            direction=90,
+            sound=None
     ) -> None:
         super().__init__()
         self.image = pygame.Surface(size)
@@ -161,6 +184,7 @@ class Ball(pygame.sprite.Sprite):
         self.direction = direction
         self.speed = speed
         self.screen_rect = screen_rect
+        self.sound = sound
 
     def update(self, paddles):
         self.move()
@@ -180,9 +204,11 @@ class Ball(pygame.sprite.Sprite):
         if self.rect.top <= self.screen_rect.top:
             self.direction *= -1
             self.direction += 180
+            self.sound.play()
         if self.rect.bottom >= self.screen_rect.bottom:
             self.direction *= -1
             self.direction += 180
+            self.sound.play()
 
     def bounce_paddles(self, paddles):
         """
@@ -192,6 +218,11 @@ class Ball(pygame.sprite.Sprite):
         for paddle in paddles:
             if paddle.rect.colliderect(self.rect):
                 self.direction *= -1
+                self.sound.play()
+                if paddle.direction == 0:
+                    self.direction -= 30
+                elif paddle.direction == 180:
+                    self.direction += 30
 
     def throw_in(self):
         """
